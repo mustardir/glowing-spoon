@@ -1,0 +1,213 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// User & Authentication
+// ============================================================================
+
+// User model - represents registered users of the platform
+// Stores account info, credentials, and user profile data
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String    // bcrypt hashed
+  role          UserRole  @default(USER)
+  avatar        String?
+  bio           String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  // Relations
+  portfolios        Portfolio[]
+  transactions      Transaction[]
+  aiConversations   AiConversation[]
+  adminLogs         AdminLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+// ============================================================================
+// Portfolio & Assets
+// ============================================================================
+
+// Portfolio model - user investment portfolios
+// Each user can have one or multiple portfolios
+model Portfolio {
+  id            String    @id @default(cuid())
+  userId        String
+  name          String    @default("My Portfolio")
+  description   String?
+  totalValue    Decimal   @default(0) @db.Decimal(18, 2)
+  totalGain     Decimal   @default(0) @db.Decimal(18, 2)
+  totalGainPct  Decimal   @default(0) @db.Decimal(8, 4)
+  cashBalance   Decimal   @default(0) @db.Decimal(18, 2)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets        Asset[]
+  transactions  Transaction[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Asset model - individual investments within portfolios
+// Tracks each security (stock, ETF, crypto, etc.) in the portfolio
+model Asset {
+  id            String    @id @default(cuid())
+  portfolioId   String
+  symbol        String    // e.g. AAPL, BTC, etc.
+  name          String    // e.g. "Apple Inc."
+  quantity      Decimal   @db.Decimal(18, 8)
+  avgCost       Decimal   @db.Decimal(18, 2)
+  currentPrice  Decimal   @db.Decimal(18, 2)
+  totalValue    Decimal   @db.Decimal(18, 2)
+  totalGain     Decimal   @db.Decimal(18, 2)
+  totalGainPct  Decimal   @db.Decimal(8, 4)
+  assetType    AssetType @default(STOCK)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  portfolio     Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+
+  @@index([portfolioId])
+  @@index([symbol])
+  @@index([assetType])
+}
+
+enum AssetType {
+  STOCK
+  ETF
+  CRYPTO
+  BOND
+  MUTUAL_FUND
+  COMMODITY
+  OTHER
+}
+
+// ============================================================================
+// Transactions
+// ============================================================================
+
+// Transaction model - buy/sell/deposit/withdrawal history
+// Tracks all money movements in and out of portfolios
+model Transaction {
+  id            String    @id @default(cuid())
+  userId        String
+  portfolioId   String
+  assetId       String?
+  type          TransactionType
+  quantity      Decimal?  @db.Decimal(18, 8)
+  price         Decimal?  @db.Decimal(18, 2)
+  amount        Decimal   @db.Decimal(18, 2)
+  fees          Decimal   @default(0) @db.Decimal(18, 2)
+  notes         String?
+  createdAt     DateTime  @default(now())
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portfolio     Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  asset         Asset?    @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([portfolioId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  DEPOSIT
+  WITHDRAWAL
+  DIVIDEND
+  INTEREST
+  FEE
+}
+
+// ============================================================================
+// AI Conversations
+// ============================================================================
+
+// AiConversation model - stores chat history with Claude AI
+// Each user can have multiple conversation threads
+model AiConversation {
+  id            String    @id @default(cuid())
+  userId        String
+  title         String?   @default("New Conversation")
+  messages      AiMessage[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// AiMessage model - individual messages in an AI conversation
+model AiMessage {
+  id              String  @id @default(cuid())
+  conversationId  String
+  role            MessageRole
+  content         String  @db.Text
+  createdAt       DateTime @default(now())
+
+  // Relations
+  conversation    AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+// ============================================================================
+// Admin Audit Logs
+// ============================================================================
+
+// AdminLog model - audit trail for admin actions
+// Tracks all administrative operations for compliance and security
+model AdminLog {
+  id            String    @id @default(cuid())
+  adminId       String
+  action        String
+  description   String?   @db.Text
+  targetUserId  String?
+  targetType    String?   // e.g. "USER", "PORTFOLIO", etc.
+  targetId      String?
+  metadata      String?   @db.Text // JSON string for additional data
+  createdAt     DateTime  @default(now())
+
+  // Relations
+  admin         User      @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([action])
+  @@index([targetUserId])
+  @@index([createdAt])
+}
